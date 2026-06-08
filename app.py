@@ -182,6 +182,7 @@ input_mode = st.radio("Input method chunein:", ["📁 Image Upload", "📷 Webca
 st.divider()
 
 # ─── Process Image ─────────────────────────────────────────────
+# ─── Process Image ─────────────────────────────────────────────
 def process_image(img: Image.Image):
     with st.spinner("👁️ MediaPipe se aankh dhundhi ja rahi hai..."):
         eyes, annotated = detect_eyes_mediapipe(img)
@@ -189,10 +190,12 @@ def process_image(img: Image.Image):
     st.image(annotated, caption="Detected Eyes", use_container_width=True)
 
     if len(eyes) == 0:
-        st.markdown('''<div class="no-eye-box">
+        st.markdown('''
+        <div class="no-eye-box">
             ⚠️ Koi aankh detect nahi hui!<br>
             <small>Seedha camera ki taraf dekho, acha lighting hona chahiye</small>
-        </div>''', unsafe_allow_html=True)
+        </div>
+        ''', unsafe_allow_html=True)
         return
 
     st.markdown(f"**{len(eyes)} aankh(en) detect hui:**")
@@ -201,31 +204,32 @@ def process_image(img: Image.Image):
     cols = st.columns(len(eyes))
 
     for i, (eye_name, eye_img) in enumerate(eyes):
-    label, conf, raw = predict(model, eye_img)
-    results.append(label)
+        label, conf, raw = predict(model, eye_img)
+        results.append(label)
 
-    with cols[i]:
-        st.image(
-            eye_img.resize((300, 200)),
-            caption=f"{eye_name} Crop"
-        )
+        with cols[i]:
+            st.image(
+                eye_img.resize((300, 200)),
+                caption=f"{eye_name} Crop"
+            )
 
-        st.write(f"Raw Probability: {raw:.4f}")
-
-        if "DROWSY" in label:
-            st.error(f"😴 DROWSY\n{conf*100:.1f}%")
-        else:
-            st.success(f"✅ ALERT\n{conf*100:.1f}%")
-
-st.write(f"Raw Probability: {raw:.4f}")
-            
-            if "DROWSY" in label:
-                st.error(f"😴 DROWSY\n{conf*100:.1f}%")
-            else:
-                st.success(f"✅ ALERT\n{conf*100:.1f}%")
+           
 
     st.divider()
 
+    # Overall verdict
+    drowsy_count = sum(1 for r in results if "DROWSY" in r)
+
+    if drowsy_count >= 1:
+        st.markdown(
+            '<div class="drowsy-box">😴 DROWSY DETECTED! — Kirpya aaraam karein!</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div class="alert-box">✅ ALERT — Safe to Drive!</div>',
+            unsafe_allow_html=True
+        )
     # Overall verdict
     drowsy_count = sum(1 for r in results if "DROWSY" in r)
     if drowsy_count >= 1:
