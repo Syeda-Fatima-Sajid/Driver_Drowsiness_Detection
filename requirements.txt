@@ -1,4 +1,5 @@
 streamlit
-streamlit-webrtc
-aiortc
-av
+tensorflow==2.19.0
+numpy==1.26.4
+Pillow
+huggingface_hub
