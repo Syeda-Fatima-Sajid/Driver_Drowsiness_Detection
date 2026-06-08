@@ -60,7 +60,7 @@ threshold = st.sidebar.slider(
     "Prediction Threshold",
     min_value=0.50,
     max_value=0.95,
-    value=0.80,
+    value=0.70
     step=0.01
 )
 
@@ -91,23 +91,14 @@ def predict_image(img):
 
     arr = preprocess_image(img)
 
-    prob = float(
-        model.predict(arr, verbose=0)[0][0]
-    )
+    prob = float(model.predict(arr, verbose=0)[0][0])
 
-    if prob > threshold:
-
+    if prob >= threshold:
         label = "✅ ALERT"
-
-        confidence = prob
-
     else:
-
         label = "😴 DROWSY"
 
-        confidence = 1 - prob
-
-    return label, confidence, prob
+    return label, prob
 
 # --------------------------------------------------
 # PROCESS IMAGE
@@ -120,26 +111,19 @@ def process_image(img):
         use_container_width=True
     )
 
-    label, confidence, prob = predict_image(img)
+    label, prob = predict_image(img)
 
     st.write("### Prediction Details")
-
     st.write(f"Raw Probability: **{prob:.4f}**")
+    st.write(f"Threshold: **{threshold:.2f}**")
 
-    st.write(
-        f"Confidence: **{confidence*100:.2f}%**"
-    )
-
-    if "ALERT" in label:
-
+    if label == "✅ ALERT":
         st.success(
-            f"{label}\n\nConfidence: {confidence*100:.2f}%"
+            f"{label}\n\nProbability: {prob*100:.2f}%"
         )
-
     else:
-
         st.error(
-            f"{label}\n\nConfidence: {confidence*100:.2f}%"
+            f"{label}\n\nProbability: {prob*100:.2f}%"
         )
 
 # --------------------------------------------------
