@@ -4,6 +4,7 @@ from PIL import Image
 import tensorflow as tf
 from huggingface_hub import hf_hub_download
 import cv2
+import mediapipe as mp
 import os
 
 # ─── Page Config ───────────────────────────────────────────────
@@ -51,7 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🚗 Driver Drowsiness Detection")
-st.markdown("**Auto Eye Detection — MobileNetV2 | EfficientNetB0**")
+st.markdown("**MediaPipe Eye Detection — MobileNetV2 | EfficientNetB0**")
 st.divider()
 
 # ─── Hugging Face Config ───────────────────────────────────────
@@ -62,10 +63,15 @@ MODEL_FILES = {
     "EfficientNetB0": "efficientnetb0_best.h5",
 }
 
-# ─── Load Haar Cascades ────────────────────────────────────────
-CASCADE_PATH  = cv2.data.haarcascades
-face_cascade  = cv2.CascadeClassifier(CASCADE_PATH + "haarcascade_frontalface_default.xml")
-eye_cascade   = cv2.CascadeClassifier(CASCADE_PATH + "haarcascade_eye.xml")
+# ─── MediaPipe Setup ───────────────────────────────────────────
+mp_face_mesh = mp.solutions.face_mesh
+mp_drawing   = mp.solutions.drawing_utils
+
+# MediaPipe Face Mesh landmark indices for eyes
+# Left eye  outer region landmarks
+LEFT_EYE_LANDMARKS  = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+# Right eye outer region landmarks
+RIGHT_EYE_LANDMARKS = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
 
 # ─── Model Loading ─────────────────────────────────────────────
 @st.cache_resource
@@ -77,80 +83,71 @@ def load_keras_model(model_name):
             hf_hub_download(repo_id=REPO_ID, filename=model_name, local_dir="models")
     return tf.keras.models.load_model(path)
 
-# ─── Eye Detection & Crop ──────────────────────────────────────
-def detect_and_crop_eyes(pil_img):
-    img_np = np.array(pil_img.convert("RGB"))
-    gray   = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    cropped = []
+# ─── MediaPipe Eye Crop ────────────────────────────────────────
+def get_eye_crop(img_np, landmarks, eye_indices, padding=0.3):
+    """Crop eye region using MediaPipe landmarks with padding."""
+    h, w = img_np.shape[:2]
 
-    faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=8, minSize=(80, 80)
-    )
+    xs = [landmarks[i].x * w for i in eye_indices]
+    ys = [landmarks[i].y * h for i in eye_indices]
 
-    if len(faces) > 0:
-        # Sirf pehla aur sab se bada face lo
-        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
-        fx, fy, fw, fh = faces[0]
+    x_min, x_max = int(min(xs)), int(max(xs))
+    y_min, y_max = int(min(ys)), int(max(ys))
 
-        # Face ka sirf upar wala 45% use karo (sirf aankhen wala hissa)
-        eye_zone_gray  = gray[fy : fy + int(fh*0.45), fx : fx+fw]
-        eye_zone_color = img_np[fy : fy + int(fh*0.45), fx : fx+fw]
+    # Add padding around eye
+    pw = int((x_max - x_min) * padding)
+    ph = int((y_max - y_min) * padding)
 
-        eyes = eye_cascade.detectMultiScale(
-            eye_zone_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
-        )
+    x_min = max(0, x_min - pw)
+    x_max = min(w, x_max + pw)
+    y_min = max(0, y_min - ph * 2)  # more padding on top
+    y_max = min(h, y_max + ph * 2)
 
-        # Sirf 2 aankhen lo (left aur right)
-        if len(eyes) > 2:
-            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
+    crop = img_np[y_min:y_max, x_min:x_max]
+    return crop, (x_min, y_min, x_max, y_max)
 
-        for (ex, ey, ew, eh) in eyes:
-            eye_img = eye_zone_color[ey:ey+eh, ex:ex+ew]
-            cropped.append(Image.fromarray(eye_img))
-    else:
-        # Sirf upar wala 40% try karo
-        h = img_np.shape[0]
-        upper = img_np[:int(h*0.4), :]
-        upper_gray = gray[:int(h*0.4), :]
+def detect_eyes_mediapipe(pil_img):
+    """
+    Uses MediaPipe Face Mesh to detect and crop both eyes.
+    Works for both open AND closed eyes.
+    Returns: list of (eye_pil_image, bbox), annotated_pil_image
+    """
+    img_np  = np.array(pil_img.convert("RGB"))
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    annotated = img_np.copy()
+    eyes = []
 
-        eyes = eye_cascade.detectMultiScale(
-            upper_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
-        )
-        if len(eyes) > 2:
-            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
+    with mp_face_mesh.FaceMesh(
+        static_image_mode=True,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.4
+    ) as face_mesh:
 
-        for (ex, ey, ew, eh) in eyes:
-            eye_img = upper[ey:ey+eh, ex:ex+ew]
-            cropped.append(Image.fromarray(eye_img))
+        results = face_mesh.process(img_np)
 
-    return cropped
+        if results.multi_face_landmarks:
+            for face_landmarks in results.multi_face_landmarks:
+                lm = face_landmarks.landmark
 
-def draw_eye_boxes(pil_img):
-    img_np = np.array(pil_img.convert("RGB"))
-    gray   = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+                # Left eye
+                left_crop, left_bbox = get_eye_crop(img_np, lm, LEFT_EYE_LANDMARKS)
+                if left_crop.size > 0:
+                    eyes.append(("Left Eye", Image.fromarray(left_crop)))
+                    x1, y1, x2, y2 = left_bbox
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                    cv2.putText(annotated, "L", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,200,255), 2)
 
-    faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=8, minSize=(80, 80)
-    )
+                # Right eye
+                right_crop, right_bbox = get_eye_crop(img_np, lm, RIGHT_EYE_LANDMARKS)
+                if right_crop.size > 0:
+                    eyes.append(("Right Eye", Image.fromarray(right_crop)))
+                    x1, y1, x2, y2 = right_bbox
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 150), 2)
+                    cv2.putText(annotated, "R", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,150), 2)
 
-    if len(faces) > 0:
-        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
-        fx, fy, fw, fh = faces[0]
-        cv2.rectangle(img_np, (fx, fy), (fx+fw, fy+fh), (0, 255, 100), 2)
+    return eyes, Image.fromarray(annotated)
 
-        eye_zone_gray = gray[fy : fy + int(fh*0.45), fx : fx+fw]
-        eyes = eye_cascade.detectMultiScale(
-            eye_zone_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
-        )
-        if len(eyes) > 2:
-            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
-
-        for (ex, ey, ew, eh) in eyes:
-            cv2.rectangle(img_np,
-                (fx+ex, fy+ey), (fx+ex+ew, fy+ey+eh),
-                (0, 200, 255), 2)
-
-    return Image.fromarray(img_np)
 # ─── Prediction ────────────────────────────────────────────────
 def preprocess_eye(eye_img: Image.Image):
     eye_img = eye_img.convert("RGB").resize((128, 128))
@@ -160,7 +157,7 @@ def preprocess_eye(eye_img: Image.Image):
 def predict(model, eye_img: Image.Image):
     arr  = preprocess_eye(eye_img)
     prob = model.predict(arr, verbose=0)[0][0]
-    label = "✅ ALERT — Eyes Open" if prob > 0.5 else "😴 DROWSY — Eyes Closed!"
+    label = "✅ ALERT" if prob > 0.5 else "😴 DROWSY"
     conf  = prob if prob > 0.5 else 1 - prob
     return label, float(conf), float(prob)
 
@@ -173,9 +170,8 @@ model_choice = st.sidebar.selectbox("Model chunein:", list(MODEL_FILES.keys()))
 model_file   = MODEL_FILES[model_choice]
 model        = load_keras_model(model_file)
 st.sidebar.success(f"✅ {model_choice} ready!")
-
 st.sidebar.divider()
-st.sidebar.info("👁️ App automatically aankh dhundh kar detect karti hai — poora face upload kar sakte hain!")
+st.sidebar.info("👁️ MediaPipe se band aankhen bhi detect hoti hain!")
 
 # ─── Input Mode ────────────────────────────────────────────────
 input_mode = st.radio("Input method chunein:", ["📁 Image Upload", "📷 Webcam"], horizontal=True)
@@ -183,28 +179,28 @@ st.divider()
 
 # ─── Process Image ─────────────────────────────────────────────
 def process_image(img: Image.Image):
-    # Show annotated image
-    annotated = draw_eye_boxes(img)
-    st.image(annotated, caption="Detected Eyes (boxes)", use_container_width=True)
+    with st.spinner("👁️ MediaPipe se aankh dhundhi ja rahi hai..."):
+        eyes, annotated = detect_eyes_mediapipe(img)
 
-    # Detect eyes
-    eyes = detect_and_crop_eyes(img)
+    st.image(annotated, caption="Detected Eyes", use_container_width=True)
 
     if len(eyes) == 0:
-        st.markdown('<div class="no-eye-box">⚠️ Koi aankh detect nahi hui!<br><small>Seedhi, clear aur well-lit face photo try karein</small></div>', unsafe_allow_html=True)
+        st.markdown('''<div class="no-eye-box">
+            ⚠️ Koi aankh detect nahi hui!<br>
+            <small>Seedha camera ki taraf dekho, acha lighting hona chahiye</small>
+        </div>''', unsafe_allow_html=True)
         return
 
-    st.markdown(f"**{len(eyes)} aankh(en) detect hui — predictions:**")
+    st.markdown(f"**{len(eyes)} aankh(en) detect hui:**")
 
-    # Predict each eye
     results = []
-    cols = st.columns(min(len(eyes), 3))
+    cols = st.columns(len(eyes))
 
-    for i, eye_img in enumerate(eyes[:3]):  # max 3 eyes show
+    for i, (eye_name, eye_img) in enumerate(eyes):
         label, conf, raw = predict(model, eye_img)
         results.append(label)
         with cols[i]:
-            st.image(eye_img.resize((100, 100)), caption=f"Eye {i+1}")
+            st.image(eye_img.resize((120, 80)), caption=eye_name)
             if "DROWSY" in label:
                 st.error(f"😴 DROWSY\n{conf*100:.1f}%")
             else:
@@ -212,28 +208,26 @@ def process_image(img: Image.Image):
 
     st.divider()
 
-    # Overall verdict — if any eye is drowsy → DROWSY
+    # Overall verdict
     drowsy_count = sum(1 for r in results if "DROWSY" in r)
-    if drowsy_count > 0:
-        st.markdown('<div class="drowsy-box">😴 OVERALL: DROWSY DETECTED! — Please Rest!</div>', unsafe_allow_html=True)
+    if drowsy_count >= 1:
+        st.markdown('<div class="drowsy-box">😴 DROWSY DETECTED! — Kirpya aaraam karein!</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="alert-box">✅ OVERALL: ALERT — Safe to Drive!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-box">✅ ALERT — Safe to Drive!</div>', unsafe_allow_html=True)
 
 # ─── Image Upload ──────────────────────────────────────────────
 if input_mode == "📁 Image Upload":
-    uploaded = st.file_uploader("Face ya eye image upload karein", type=["jpg", "jpeg", "png"])
+    uploaded = st.file_uploader("Face image upload karein", type=["jpg", "jpeg", "png"])
     if uploaded:
         img = Image.open(uploaded)
-        with st.spinner("👁️ Aankh dhundhi ja rahi hai..."):
-            process_image(img)
+        process_image(img)
 
 # ─── Webcam ────────────────────────────────────────────────────
 elif input_mode == "📷 Webcam":
     img_file = st.camera_input("Camera se photo lo")
     if img_file:
         img = Image.open(img_file)
-        with st.spinner("👁️ Detecting..."):
-            process_image(img)
+        process_image(img)
 
 st.divider()
-st.caption("Developed with ❤️ | MRL Eye Dataset | TensorFlow + OpenCV + Streamlit")
+st.caption("Developed with ❤️ | MRL Eye Dataset | TensorFlow + MediaPipe + Streamlit")
