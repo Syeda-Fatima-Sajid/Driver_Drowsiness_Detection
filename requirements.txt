@@ -3,5 +3,5 @@ tensorflow==2.19.0
 numpy
 Pillow
 huggingface_hub
-opencv-python-headless
+opencv-contrib-python-headless==4.8.1.78
 mediapipe
