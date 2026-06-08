@@ -84,8 +84,7 @@ def load_keras_model(model_name):
     return tf.keras.models.load_model(path)
 
 # ─── MediaPipe Eye Crop ────────────────────────────────────────
-def get_eye_crop(img_np, landmarks, eye_indices, padding=0.3):
-    """Crop eye region using MediaPipe landmarks with padding."""
+def get_eye_crop(img_np, landmarks, eye_indices, padding=1.2):
     h, w = img_np.shape[:2]
 
     xs = [landmarks[i].x * w for i in eye_indices]
@@ -94,18 +93,20 @@ def get_eye_crop(img_np, landmarks, eye_indices, padding=0.3):
     x_min, x_max = int(min(xs)), int(max(xs))
     y_min, y_max = int(min(ys)), int(max(ys))
 
-    # Add padding around eye
     pw = int((x_max - x_min) * padding)
     ph = int((y_max - y_min) * padding)
 
-    x_min = max(0, x_min - pw)
-    x_max = min(w, x_max + pw)
-    y_min = max(0, y_min - ph * 2)  # more padding on top
-    y_max = min(h, y_max + ph * 2)
+    # Bigger crop for EfficientNet
+    x_min = max(0, x_min - pw * 2)
+    x_max = min(w, x_max + pw * 2)
+
+    y_min = max(0, y_min - ph * 4)
+    y_max = min(h, y_max + ph * 4)
 
     crop = img_np[y_min:y_max, x_min:x_max]
-    return crop, (x_min, y_min, x_max, y_max)
 
+    return crop, (x_min, y_min, x_max, y_max)
+    
 def detect_eyes_mediapipe(pil_img):
     """
     Uses MediaPipe Face Mesh to detect and crop both eyes.
@@ -155,11 +156,14 @@ def preprocess_eye(eye_img: Image.Image):
     return np.expand_dims(arr, axis=0)
 
 def predict(model, eye_img: Image.Image):
-    arr  = preprocess_eye(eye_img)
-    prob = model.predict(arr, verbose=0)[0][0]
+    arr = preprocess_eye(eye_img)
+
+    prob = float(model.predict(arr, verbose=0)[0][0])
+
     label = "✅ ALERT" if prob > 0.5 else "😴 DROWSY"
-    conf  = prob if prob > 0.5 else 1 - prob
-    return label, float(conf), float(prob)
+    conf = prob if prob > 0.5 else 1 - prob
+
+    return label, conf, prob
 
 # ─── Sidebar ───────────────────────────────────────────────────
 st.sidebar.header("⚙️ Settings")
@@ -197,10 +201,24 @@ def process_image(img: Image.Image):
     cols = st.columns(len(eyes))
 
     for i, (eye_name, eye_img) in enumerate(eyes):
-        label, conf, raw = predict(model, eye_img)
-        results.append(label)
-        with cols[i]:
-            st.image(eye_img.resize((120, 80)), caption=eye_name)
+    label, conf, raw = predict(model, eye_img)
+    results.append(label)
+
+    with cols[i]:
+        st.image(
+            eye_img.resize((300, 200)),
+            caption=f"{eye_name} Crop"
+        )
+
+        st.write(f"Raw Probability: {raw:.4f}")
+
+        if "DROWSY" in label:
+            st.error(f"😴 DROWSY\n{conf*100:.1f}%")
+        else:
+            st.success(f"✅ ALERT\n{conf*100:.1f}%")
+
+st.write(f"Raw Probability: {raw:.4f}")
+            
             if "DROWSY" in label:
                 st.error(f"😴 DROWSY\n{conf*100:.1f}%")
             else:
