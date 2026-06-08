@@ -79,54 +79,78 @@ def load_keras_model(model_name):
 
 # ─── Eye Detection & Crop ──────────────────────────────────────
 def detect_and_crop_eyes(pil_img):
-    """
-    Returns list of cropped eye PIL images detected in the image.
-    Tries: face → eyes inside face. If no face, tries whole image for eyes.
-    """
-    img_np  = np.array(pil_img.convert("RGB"))
-    gray    = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    img_np = np.array(pil_img.convert("RGB"))
+    gray   = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     cropped = []
 
-    # Try face first
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+    faces = face_cascade.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=8, minSize=(80, 80)
+    )
 
     if len(faces) > 0:
-        for (fx, fy, fw, fh) in faces:
-            roi_gray  = gray[fy:fy+fh, fx:fx+fw]
-            roi_color = img_np[fy:fy+fh, fx:fx+fw]
-            eyes = eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20))
-            for (ex, ey, ew, eh) in eyes:
-                eye_img = roi_color[ey:ey+eh, ex:ex+ew]
-                cropped.append(Image.fromarray(eye_img))
-    else:
-        # No face found — try directly on full image
-        eyes = eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20))
+        # Sirf pehla aur sab se bada face lo
+        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
+        fx, fy, fw, fh = faces[0]
+
+        # Face ka sirf upar wala 45% use karo (sirf aankhen wala hissa)
+        eye_zone_gray  = gray[fy : fy + int(fh*0.45), fx : fx+fw]
+        eye_zone_color = img_np[fy : fy + int(fh*0.45), fx : fx+fw]
+
+        eyes = eye_cascade.detectMultiScale(
+            eye_zone_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
+        )
+
+        # Sirf 2 aankhen lo (left aur right)
+        if len(eyes) > 2:
+            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
+
         for (ex, ey, ew, eh) in eyes:
-            eye_img = img_np[ey:ey+eh, ex:ex+ew]
+            eye_img = eye_zone_color[ey:ey+eh, ex:ex+ew]
+            cropped.append(Image.fromarray(eye_img))
+    else:
+        # Sirf upar wala 40% try karo
+        h = img_np.shape[0]
+        upper = img_np[:int(h*0.4), :]
+        upper_gray = gray[:int(h*0.4), :]
+
+        eyes = eye_cascade.detectMultiScale(
+            upper_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
+        )
+        if len(eyes) > 2:
+            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
+
+        for (ex, ey, ew, eh) in eyes:
+            eye_img = upper[ey:ey+eh, ex:ex+ew]
             cropped.append(Image.fromarray(eye_img))
 
     return cropped
 
 def draw_eye_boxes(pil_img):
-    """Draw green boxes around detected eyes for visualization."""
     img_np = np.array(pil_img.convert("RGB"))
     gray   = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
 
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+    faces = face_cascade.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=8, minSize=(80, 80)
+    )
+
     if len(faces) > 0:
-        for (fx, fy, fw, fh) in faces:
-            cv2.rectangle(img_np, (fx, fy), (fx+fw, fy+fh), (0, 255, 100), 2)
-            roi_gray = gray[fy:fy+fh, fx:fx+fw]
-            eyes = eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20))
-            for (ex, ey, ew, eh) in eyes:
-                cv2.rectangle(img_np, (fx+ex, fy+ey), (fx+ex+ew, fy+ey+eh), (0, 200, 255), 2)
-    else:
-        eyes = eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20))
+        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
+        fx, fy, fw, fh = faces[0]
+        cv2.rectangle(img_np, (fx, fy), (fx+fw, fy+fh), (0, 255, 100), 2)
+
+        eye_zone_gray = gray[fy : fy + int(fh*0.45), fx : fx+fw]
+        eyes = eye_cascade.detectMultiScale(
+            eye_zone_gray, scaleFactor=1.1, minNeighbors=8, minSize=(25, 25)
+        )
+        if len(eyes) > 2:
+            eyes = sorted(eyes, key=lambda e: e[2]*e[3], reverse=True)[:2]
+
         for (ex, ey, ew, eh) in eyes:
-            cv2.rectangle(img_np, (ex, ey), (ex+ew, ey+eh), (0, 200, 255), 2)
+            cv2.rectangle(img_np,
+                (fx+ex, fy+ey), (fx+ex+ew, fy+ey+eh),
+                (0, 200, 255), 2)
 
     return Image.fromarray(img_np)
-
 # ─── Prediction ────────────────────────────────────────────────
 def preprocess_eye(eye_img: Image.Image):
     eye_img = eye_img.convert("RGB").resize((128, 128))
