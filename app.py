@@ -60,7 +60,7 @@ threshold = st.sidebar.slider(
     "Prediction Threshold",
     min_value=0.50,
     max_value=0.95,
-    value=0.70,
+    value=0.80,
     step=0.01
 )
 
