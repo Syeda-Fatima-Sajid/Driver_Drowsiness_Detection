@@ -1,13 +1,16 @@
 import streamlit as st
 import numpy as np
-from PIL import Image
 import tensorflow as tf
+from PIL import Image
 from huggingface_hub import hf_hub_download
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+import av
+import cv2
 import os
 
-# --------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------
+# -----------------------------
+# Page Config
+# -----------------------------
 st.set_page_config(
     page_title="Driver Drowsiness Detection",
     page_icon="🚗",
@@ -15,21 +18,17 @@ st.set_page_config(
 )
 
 st.title("🚗 Driver Drowsiness Detection")
-st.markdown("### EfficientNetB0 Drowsiness Classifier")
-st.divider()
+st.write("Live Webcam Monitoring using EfficientNetB0")
 
-# --------------------------------------------------
-# HUGGING FACE MODEL CONFIG
-# --------------------------------------------------
+# -----------------------------
+# Hugging Face Model
+# -----------------------------
 REPO_ID = "Syeda-fatima-Shah/driver-drowsiness-detection"
-
 MODEL_FILE = "efficientnetb0_best.h5"
 
-IMG_SIZE = (128, 128)
-
-# --------------------------------------------------
-# LOAD MODEL
-# --------------------------------------------------
+# -----------------------------
+# Load Model
+# -----------------------------
 @st.cache_resource
 def load_model():
     os.makedirs("models", exist_ok=True)
@@ -48,14 +47,17 @@ def load_model():
 
 model = load_model()
 
-st.success("✅ EfficientNetB0 Loaded Successfully")
+# -----------------------------
+# Preprocessing
+# SAME AS NGROK VERSION
+# -----------------------------
+IMG_SIZE = (128, 128)
 
-# --------------------------------------------------
-# PREPROCESS
-# --------------------------------------------------
-def preprocess_image(img):
+def preprocess(frame):
 
-    img = img.convert("RGB")
+    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    img = Image.fromarray(img)
 
     img = img.resize(IMG_SIZE)
 
@@ -67,129 +69,71 @@ def preprocess_image(img):
 
     return arr
 
-# --------------------------------------------------
-# PREDICT
-# --------------------------------------------------
-def predict_image(img):
+# -----------------------------
+# Video Processor
+# -----------------------------
+class DrowsinessProcessor(VideoProcessorBase):
 
-    arr = preprocess_image(img)
+    def recv(self, frame):
 
-    prob = float(model.predict(arr, verbose=0)[0][0])
+        img = frame.to_ndarray(format="bgr24")
 
-    threshold = 0.50
+        try:
 
-    if prob > threshold:
-        label = "✅ ALERT"
-        confidence = prob
-    else:
-        label = "😴 DROWSY"
-        confidence = 1 - prob
+            arr = preprocess(img)
 
-    return label, confidence, prob
+            prob = float(
+                model.predict(arr, verbose=0)[0][0]
+            )
 
-# --------------------------------------------------
-# INPUT MODE
-# --------------------------------------------------
-input_mode = st.radio(
-    "Choose Input Method",
-    ["📁 Image Upload", "📷 Webcam"],
-    horizontal=True
+            if prob > 0.5:
+                label = "ALERT"
+                color = (0, 255, 0)
+            else:
+                label = "DROWSY"
+                color = (0, 0, 255)
+
+            cv2.putText(
+                img,
+                f"{label} ({prob:.2f})",
+                (20, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                color,
+                2
+            )
+
+        except Exception as e:
+
+            cv2.putText(
+                img,
+                f"ERROR",
+                (20, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 0, 255),
+                2
+            )
+
+            print(e)
+
+        return av.VideoFrame.from_ndarray(
+            img,
+            format="bgr24"
+        )
+
+# -----------------------------
+# Webcam
+# -----------------------------
+webrtc_streamer(
+    key="drowsiness",
+    video_processor_factory=DrowsinessProcessor,
+    media_stream_constraints={
+        "video": True,
+        "audio": False
+    },
+    async_processing=True
 )
 
-st.divider()
-
-# --------------------------------------------------
-# IMAGE UPLOAD
-# --------------------------------------------------
-if input_mode == "📁 Image Upload":
-
-    uploaded_file = st.file_uploader(
-        "Upload Image",
-        type=["jpg", "jpeg", "png"]
-    )
-
-    if uploaded_file:
-
-        img = Image.open(uploaded_file)
-
-        st.image(
-            img,
-            caption="Uploaded Image",
-            use_container_width=True
-        )
-
-        st.divider()
-
-        label, confidence, prob = predict_image(img)
-
-        st.markdown(
-            f"## Raw Probability: `{prob:.4f}`"
-        )
-
-        if "DROWSY" in label:
-
-            st.error(label)
-
-            st.write(
-                f"Confidence: {confidence*100:.2f}%"
-            )
-
-        else:
-
-            st.success(label)
-
-            st.write(
-                f"Confidence: {confidence*100:.2f}%"
-            )
-
-# --------------------------------------------------
-# WEBCAM
-# --------------------------------------------------
-if input_mode == "📷 Webcam":
-
-    camera_image = st.camera_input(
-        "Capture Image"
-    )
-
-    if camera_image:
-
-        img = Image.open(camera_image)
-
-        st.image(
-            img,
-            caption="Captured Image",
-            use_container_width=True
-        )
-
-        st.divider()
-
-        label, confidence, prob = predict_image(img)
-
-        st.markdown(
-            f"## Raw Probability: `{prob:.4f}`"
-        )
-
-        if "DROWSY" in label:
-
-            st.error(label)
-
-            st.write(
-                f"Confidence: {confidence*100:.2f}%"
-            )
-
-        else:
-
-            st.success(label)
-
-            st.write(
-                f"Confidence: {confidence*100:.2f}%"
-            )
-
-# --------------------------------------------------
-# FOOTER
-# --------------------------------------------------
-st.divider()
-
-st.caption(
-    "Developed with ❤️ using TensorFlow + Streamlit"
-)
+st.markdown("---")
+st.caption("EfficientNetB0 | Streamlit WebRTC | Hugging Face")
