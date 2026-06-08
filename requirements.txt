@@ -4,3 +4,4 @@ numpy
 Pillow
 huggingface_hub
 opencv-python-headless
+mediapipe
