@@ -5,7 +5,9 @@ import tensorflow as tf
 from huggingface_hub import hf_hub_download
 import os
 
-# ─── Page Config ─────────────────────────────
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 st.set_page_config(
     page_title="Driver Drowsiness Detection",
     page_icon="🚗",
@@ -13,14 +15,21 @@ st.set_page_config(
 )
 
 st.title("🚗 Driver Drowsiness Detection")
-st.markdown("### EfficientNetB0 Drowsiness Detector")
+st.markdown("### EfficientNetB0 Drowsiness Classifier")
 st.divider()
 
-# ─── Hugging Face Model Config ─────────────────
+# --------------------------------------------------
+# HUGGING FACE MODEL CONFIG
+# --------------------------------------------------
 REPO_ID = "Syeda-fatima-Shah/driver-drowsiness-detection"
+
 MODEL_FILE = "efficientnetb0_best.h5"
 
-# ─── Load Model ───────────────────────────────
+IMG_SIZE = (128, 128)
+
+# --------------------------------------------------
+# LOAD MODEL
+# --------------------------------------------------
 @st.cache_resource
 def load_model():
     os.makedirs("models", exist_ok=True)
@@ -28,7 +37,7 @@ def load_model():
     model_path = f"models/{MODEL_FILE}"
 
     if not os.path.exists(model_path):
-        with st.spinner("⬇️ Downloading model from Hugging Face..."):
+        with st.spinner("Downloading model from Hugging Face..."):
             hf_hub_download(
                 repo_id=REPO_ID,
                 filename=MODEL_FILE,
@@ -41,26 +50,35 @@ model = load_model()
 
 st.success("✅ EfficientNetB0 Loaded Successfully")
 
-# ─── Preprocessing (Same as ngrok) ────────────
-IMG_SIZE = (128, 128)
-
+# --------------------------------------------------
+# PREPROCESS
+# --------------------------------------------------
 def preprocess_image(img):
+
     img = img.convert("RGB")
+
     img = img.resize(IMG_SIZE)
 
-    arr = np.array(img, dtype=np.float32) / 255.0
+    arr = np.array(img, dtype=np.float32)
+
+    arr = arr / 255.0
+
     arr = np.expand_dims(arr, axis=0)
 
     return arr
 
-# ─── Prediction ───────────────────────────────
+# --------------------------------------------------
+# PREDICT
+# --------------------------------------------------
 def predict_image(img):
 
     arr = preprocess_image(img)
 
     prob = float(model.predict(arr, verbose=0)[0][0])
 
-    if prob > 0.5:
+    threshold = 0.50
+
+    if prob > threshold:
         label = "✅ ALERT"
         confidence = prob
     else:
@@ -69,16 +87,21 @@ def predict_image(img):
 
     return label, confidence, prob
 
-# ─── Upload / Webcam ──────────────────────────
+# --------------------------------------------------
+# INPUT MODE
+# --------------------------------------------------
 input_mode = st.radio(
     "Choose Input Method",
-    ["📁 Upload Image", "📷 Webcam"],
+    ["📁 Image Upload", "📷 Webcam"],
     horizontal=True
 )
 
 st.divider()
 
-if input_mode == "📁 Upload Image":
+# --------------------------------------------------
+# IMAGE UPLOAD
+# --------------------------------------------------
+if input_mode == "📁 Image Upload":
 
     uploaded_file = st.file_uploader(
         "Upload Image",
@@ -95,26 +118,38 @@ if input_mode == "📁 Upload Image":
             use_container_width=True
         )
 
-        with st.spinner("Predicting..."):
-
-            label, conf, prob = predict_image(img)
-
         st.divider()
 
-        st.write(f"### Raw Probability: `{prob:.4f}`")
+        label, confidence, prob = predict_image(img)
+
+        st.markdown(
+            f"## Raw Probability: `{prob:.4f}`"
+        )
 
         if "DROWSY" in label:
-            st.error(
-                f"😴 DROWSY DETECTED\n\nConfidence: {conf*100:.2f}%"
+
+            st.error(label)
+
+            st.write(
+                f"Confidence: {confidence*100:.2f}%"
             )
+
         else:
-            st.success(
-                f"✅ ALERT\n\nConfidence: {conf*100:.2f}%"
+
+            st.success(label)
+
+            st.write(
+                f"Confidence: {confidence*100:.2f}%"
             )
 
-elif input_mode == "📷 Webcam":
+# --------------------------------------------------
+# WEBCAM
+# --------------------------------------------------
+if input_mode == "📷 Webcam":
 
-    camera_image = st.camera_input("Take a Picture")
+    camera_image = st.camera_input(
+        "Capture Image"
+    )
 
     if camera_image:
 
@@ -126,22 +161,35 @@ elif input_mode == "📷 Webcam":
             use_container_width=True
         )
 
-        with st.spinner("Predicting..."):
-
-            label, conf, prob = predict_image(img)
-
         st.divider()
 
-        st.write(f"### Raw Probability: `{prob:.4f}`")
+        label, confidence, prob = predict_image(img)
+
+        st.markdown(
+            f"## Raw Probability: `{prob:.4f}`"
+        )
 
         if "DROWSY" in label:
-            st.error(
-                f"😴 DROWSY DETECTED\n\nConfidence: {conf*100:.2f}%"
-            )
-        else:
-            st.success(
-                f"✅ ALERT\n\nConfidence: {conf*100:.2f}%"
+
+            st.error(label)
+
+            st.write(
+                f"Confidence: {confidence*100:.2f}%"
             )
 
+        else:
+
+            st.success(label)
+
+            st.write(
+                f"Confidence: {confidence*100:.2f}%"
+            )
+
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
 st.divider()
-st.caption("Developed with ❤️ using TensorFlow + Streamlit")
+
+st.caption(
+    "Developed with ❤️ using TensorFlow + Streamlit"
+)
