@@ -5,9 +5,7 @@ import tensorflow as tf
 from huggingface_hub import hf_hub_download
 import os
 
-# ─────────────────────────────────────────────
-# Page Config
-# ─────────────────────────────────────────────
+# ─── Page Config ─────────────────────────────
 st.set_page_config(
     page_title="Driver Drowsiness Detection",
     page_icon="🚗",
@@ -15,158 +13,135 @@ st.set_page_config(
 )
 
 st.title("🚗 Driver Drowsiness Detection")
-st.markdown("### EfficientNetB0 Driver Drowsiness Classifier")
+st.markdown("### EfficientNetB0 Drowsiness Detector")
 st.divider()
 
-# ─────────────────────────────────────────────
-# Hugging Face Model
-# ─────────────────────────────────────────────
+# ─── Hugging Face Model Config ─────────────────
 REPO_ID = "Syeda-fatima-Shah/driver-drowsiness-detection"
+MODEL_FILE = "efficientnetb0_best.h5"
 
-MODEL_FILES = {
-    "EfficientNetB0": "efficientnetb0_best.h5",
-}
-
-IMG_SIZE = (128, 128)
-
-# ─────────────────────────────────────────────
-# Load Model
-# ─────────────────────────────────────────────
+# ─── Load Model ───────────────────────────────
 @st.cache_resource
-def load_keras_model(model_name):
+def load_model():
     os.makedirs("models", exist_ok=True)
 
-    model_path = f"models/{model_name}"
+    model_path = f"models/{MODEL_FILE}"
 
     if not os.path.exists(model_path):
         with st.spinner("⬇️ Downloading model from Hugging Face..."):
             hf_hub_download(
                 repo_id=REPO_ID,
-                filename=model_name,
+                filename=MODEL_FILE,
                 local_dir="models"
             )
 
     return tf.keras.models.load_model(model_path)
 
-# ─────────────────────────────────────────────
-# Preprocessing
-# ─────────────────────────────────────────────
-def preprocess_image(img):
+model = load_model()
 
+st.success("✅ EfficientNetB0 Loaded Successfully")
+
+# ─── Preprocessing (Same as ngrok) ────────────
+IMG_SIZE = (128, 128)
+
+def preprocess_image(img):
     img = img.convert("RGB")
     img = img.resize(IMG_SIZE)
 
     arr = np.array(img, dtype=np.float32) / 255.0
-
     arr = np.expand_dims(arr, axis=0)
 
     return arr
 
-# ─────────────────────────────────────────────
-# Prediction
-# ─────────────────────────────────────────────
-def predict(model, img):
+# ─── Prediction ───────────────────────────────
+def predict_image(img):
 
     arr = preprocess_image(img)
 
     prob = float(model.predict(arr, verbose=0)[0][0])
 
-    label = "ALERT" if prob > 0.5 else "DROWSY"
-
-    confidence = prob if prob > 0.5 else 1 - prob
+    if prob > 0.5:
+        label = "✅ ALERT"
+        confidence = prob
+    else:
+        label = "😴 DROWSY"
+        confidence = 1 - prob
 
     return label, confidence, prob
 
-# ─────────────────────────────────────────────
-# Sidebar
-# ─────────────────────────────────────────────
-st.sidebar.header("⚙️ Settings")
-
-model_choice = st.sidebar.selectbox(
-    "Select Model",
-    list(MODEL_FILES.keys())
-)
-
-model = load_keras_model(MODEL_FILES[model_choice])
-
-st.sidebar.success("✅ Model Loaded")
-
-# ─────────────────────────────────────────────
-# Process Image
-# ─────────────────────────────────────────────
-def process_image(img):
-
-    st.image(
-        img,
-        caption="Input Image",
-        use_container_width=True
-    )
-
-    with st.spinner("🔍 Analyzing Driver State..."):
-
-        label, confidence, prob = predict(model, img)
-
-    st.write(f"Raw Probability: {prob:.4f}")
-
-    st.divider()
-
-    if label == "DROWSY":
-
-        st.error(
-            f"😴 DROWSY DETECTED\n\nConfidence: {confidence*100:.2f}%"
-        )
-
-    else:
-
-        st.success(
-            f"✅ ALERT — Safe to Drive!\n\nConfidence: {confidence*100:.2f}%"
-        )
-
-# ─────────────────────────────────────────────
-# Input Mode
-# ─────────────────────────────────────────────
+# ─── Upload / Webcam ──────────────────────────
 input_mode = st.radio(
     "Choose Input Method",
-    ["📁 Image Upload", "📷 Webcam"],
+    ["📁 Upload Image", "📷 Webcam"],
     horizontal=True
 )
 
 st.divider()
 
-# ─────────────────────────────────────────────
-# Image Upload
-# ─────────────────────────────────────────────
-if input_mode == "📁 Image Upload":
+if input_mode == "📁 Upload Image":
 
-    uploaded = st.file_uploader(
-        "Upload Driver Image",
+    uploaded_file = st.file_uploader(
+        "Upload Image",
         type=["jpg", "jpeg", "png"]
     )
 
-    if uploaded:
+    if uploaded_file:
 
-        img = Image.open(uploaded)
+        img = Image.open(uploaded_file)
 
-        process_image(img)
+        st.image(
+            img,
+            caption="Uploaded Image",
+            use_container_width=True
+        )
 
-# ─────────────────────────────────────────────
-# Webcam
-# ─────────────────────────────────────────────
+        with st.spinner("Predicting..."):
+
+            label, conf, prob = predict_image(img)
+
+        st.divider()
+
+        st.write(f"### Raw Probability: `{prob:.4f}`")
+
+        if "DROWSY" in label:
+            st.error(
+                f"😴 DROWSY DETECTED\n\nConfidence: {conf*100:.2f}%"
+            )
+        else:
+            st.success(
+                f"✅ ALERT\n\nConfidence: {conf*100:.2f}%"
+            )
+
 elif input_mode == "📷 Webcam":
 
-    img_file = st.camera_input("Capture Driver Image")
+    camera_image = st.camera_input("Take a Picture")
 
-    if img_file:
+    if camera_image:
 
-        img = Image.open(img_file)
+        img = Image.open(camera_image)
 
-        process_image(img)
+        st.image(
+            img,
+            caption="Captured Image",
+            use_container_width=True
+        )
 
-# ─────────────────────────────────────────────
-# Footer
-# ─────────────────────────────────────────────
+        with st.spinner("Predicting..."):
+
+            label, conf, prob = predict_image(img)
+
+        st.divider()
+
+        st.write(f"### Raw Probability: `{prob:.4f}`")
+
+        if "DROWSY" in label:
+            st.error(
+                f"😴 DROWSY DETECTED\n\nConfidence: {conf*100:.2f}%"
+            )
+        else:
+            st.success(
+                f"✅ ALERT\n\nConfidence: {conf*100:.2f}%"
+            )
+
 st.divider()
-
-st.caption(
-    "Developed with ❤️ | EfficientNetB0 | TensorFlow | Streamlit"
-)
+st.caption("Developed with ❤️ using TensorFlow + Streamlit")
