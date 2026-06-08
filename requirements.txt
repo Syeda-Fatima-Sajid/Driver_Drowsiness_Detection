@@ -1,7 +1,7 @@
 streamlit
-tensorflow==2.19.0
+tensorflow==2.16.1
 numpy==1.26.4
 Pillow
 huggingface_hub
-opencv-python-headless==4.8.1.78
-mediapipe==0.10.9
+opencv-python-headless
+mediapipe==0.10.14
