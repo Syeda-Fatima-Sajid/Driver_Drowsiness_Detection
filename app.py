@@ -1,7 +1,12 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer
 
-st.set_page_config(page_title="Test")
+st.title("WebRTC Test")
 
-st.title("TEST APP")
-
-st.success("If you can see this, Streamlit is working.")
+webrtc_streamer(
+    key="test",
+    media_stream_constraints={
+        "video": True,
+        "audio": False
+    }
+)
