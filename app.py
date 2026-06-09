@@ -2,8 +2,6 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-from huggingface_hub import hf_hub_download
-import os
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -14,42 +12,29 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🚗 Driver Drowsiness Detection")
-st.markdown("### EfficientNetB0 Model")
-
-# --------------------------------------------------
-# HUGGING FACE
-# --------------------------------------------------
-REPO_ID = "Syeda-fatima-Shah/driver-drowsiness-detection"
-MODEL_FILE = "efficientnetb0_best.h5"
+st.title("🚗 Driver Drowsiness Detection (TFLite)")
+st.markdown("### EfficientNetB0 - TensorFlow Lite")
 
 IMG_SIZE = (128, 128)
 
 # --------------------------------------------------
-# LOAD MODEL
+# LOAD TFLITE MODEL
 # --------------------------------------------------
 @st.cache_resource
-def load_model():
+def load_tflite_model():
+    interpreter = tf.lite.Interpreter(
+        model_path="drowsiness_model.tflite"
+    )
 
-    os.makedirs("models", exist_ok=True)
+    interpreter.allocate_tensors()
 
-    model_path = f"models/{MODEL_FILE}"
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
 
-    if not os.path.exists(model_path):
+    return interpreter, input_details, output_details
 
-        with st.spinner("Downloading model from Hugging Face..."):
 
-            hf_hub_download(
-                repo_id=REPO_ID,
-                filename=MODEL_FILE,
-                local_dir="models"
-            )
-
-    model = tf.keras.models.load_model(model_path)
-
-    return model
-
-model = load_model()
+interpreter, input_details, output_details = load_tflite_model()
 
 # --------------------------------------------------
 # SIDEBAR
@@ -64,16 +49,14 @@ threshold = st.sidebar.slider(
     step=0.01
 )
 
-st.sidebar.write(f"Current Threshold: {threshold}")
-
 # --------------------------------------------------
 # PREPROCESS
-# SAME AS NGROK
+# SAME AS YOUR NGROK VERSION
+# RGB -> 128x128 -> /255
 # --------------------------------------------------
 def preprocess_image(img):
 
     img = img.convert("RGB")
-
     img = img.resize(IMG_SIZE)
 
     arr = np.array(img, dtype=np.float32)
@@ -84,14 +67,26 @@ def preprocess_image(img):
 
     return arr
 
+
 # --------------------------------------------------
-# PREDICT
+# TFLITE PREDICTION
 # --------------------------------------------------
 def predict_image(img):
 
     arr = preprocess_image(img)
 
-    prob = float(model.predict(arr, verbose=0)[0][0])
+    interpreter.set_tensor(
+        input_details[0]["index"],
+        arr.astype(np.float32)
+    )
+
+    interpreter.invoke()
+
+    prob = float(
+        interpreter.get_tensor(
+            output_details[0]["index"]
+        )[0][0]
+    )
 
     if prob >= threshold:
         label = "✅ ALERT"
@@ -99,6 +94,7 @@ def predict_image(img):
         label = "😴 DROWSY"
 
     return label, prob
+
 
 # --------------------------------------------------
 # PROCESS IMAGE
@@ -118,13 +114,17 @@ def process_image(img):
     st.write(f"Threshold: **{threshold:.2f}**")
 
     if label == "✅ ALERT":
+
         st.success(
             f"{label}\n\nProbability: {prob*100:.2f}%"
         )
+
     else:
+
         st.error(
             f"{label}\n\nProbability: {prob*100:.2f}%"
         )
+
 
 # --------------------------------------------------
 # INPUT MODE
@@ -156,7 +156,7 @@ if mode == "📁 Image Upload":
 # --------------------------------------------------
 # CAMERA
 # --------------------------------------------------
-if mode == "📷 Camera":
+elif mode == "📷 Camera":
 
     camera_file = st.camera_input(
         "Take a Picture"
@@ -168,11 +168,8 @@ if mode == "📷 Camera":
 
         process_image(image)
 
-# --------------------------------------------------
-# FOOTER
-# --------------------------------------------------
 st.divider()
 
 st.caption(
-    "EfficientNetB0 | Streamlit | Hugging Face"
+    "EfficientNetB0 • TensorFlow Lite • Streamlit"
 )
