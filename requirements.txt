@@ -1,4 +1,7 @@
 streamlit
-tensorflow==2.19.0
-numpy==1.26.4
+streamlit-webrtc
+tensorflow
+opencv-python-headless
+av
+numpy
 Pillow
