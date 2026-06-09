@@ -89,11 +89,10 @@ def predict_image(img):
     )
 
     if prob >= threshold:
-    label = "✅ ALERT"
-else:
-    label = "😴 DROWSY"
-
-    return label, prob
+        label = "✅ ALERT"
+    else:
+        label = "😴 DROWSY"
+        return label, prob
     
 
 
