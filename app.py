@@ -88,12 +88,7 @@ def predict_image(img):
         )[0][0]
     )
 
-    if prob >= threshold:
-        label = "✅ ALERT"
-    else:
-        label = "😴 DROWSY"
-
-    return label, prob
+    return prob
     
 
 
@@ -108,7 +103,7 @@ def process_image(img):
         use_container_width=True
     )
 
-    label, prob = predict_image(img)
+    prob = predict_image(img)
 
 st.write("### Prediction Details")
 st.write(f"Raw Probability: {prob:.4f}")
