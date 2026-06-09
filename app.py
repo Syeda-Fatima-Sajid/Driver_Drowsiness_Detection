@@ -1,12 +1,10 @@
 import streamlit as st
-import tensorflow as tf
+import os
 
-st.title("TensorFlow Test")
+st.title("File Check")
 
-interpreter = tf.lite.Interpreter(
-    model_path="drowsiness_model.tflite"
-)
+st.write("Current directory:")
+st.write(os.getcwd())
 
-interpreter.allocate_tensors()
-
-st.success("TFLite Loaded Successfully")
+st.write("Files:")
+st.write(os.listdir("."))
