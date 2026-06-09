@@ -41,11 +41,11 @@ interpreter, input_details, output_details = load_tflite_model()
 # --------------------------------------------------
 st.sidebar.header("⚙ Settings")
 
-threshold = st.sidebar.slider(
+threshold = st.sidebar.number_input(
     "Prediction Threshold",
-    min_value=0.50,
-    max_value=0.95,
-    threshold = 0.50,
+    min_value=0.0,
+    max_value=1.0,
+    value=0.50,
     step=0.01
 )
 
@@ -89,11 +89,12 @@ def predict_image(img):
     )
 
     if prob >= threshold:
-        label = "✅ ALERT"
-    else:
-        label = "😴 DROWSY"
+    label = "✅ ALERT"
+else:
+    label = "😴 DROWSY"
 
     return label, prob
+    
 
 
 # --------------------------------------------------
