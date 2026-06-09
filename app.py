@@ -20,7 +20,7 @@ IMG_SIZE = (128, 128)
 def load_model():
 
     interpreter = tf.lite.Interpreter(
-        model_path="drowsiness_model.tflite"
+        model_path="drowsiness_model_fixed.tflite"
     )
 
     interpreter.allocate_tensors()
