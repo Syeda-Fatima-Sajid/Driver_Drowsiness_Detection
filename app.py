@@ -1,12 +1,12 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
+import tensorflow as tf
 
-st.title("WebRTC Test")
+st.title("TensorFlow Test")
 
-webrtc_streamer(
-    key="test",
-    media_stream_constraints={
-        "video": True,
-        "audio": False
-    }
+interpreter = tf.lite.Interpreter(
+    model_path="drowsiness_model.tflite"
 )
+
+interpreter.allocate_tensors()
+
+st.success("TFLite Loaded Successfully")
