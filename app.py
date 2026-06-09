@@ -110,21 +110,26 @@ def process_image(img):
 
     label, prob = predict_image(img)
 
-    st.write("### Prediction Details")
-    st.write(f"Raw Probability: **{prob:.4f}**")
-    st.write(f"Threshold: **{threshold:.2f}**")
+st.write("### Prediction Details")
+st.write(f"Raw Probability: {prob:.4f}")
 
-    if label == "✅ ALERT":
+if prob >= 0.85:
 
-        st.success(
-            f"{label}\n\nProbability: {prob*100:.2f}%"
-        )
+    st.success(
+        f"✅ ALERT\n\nProbability: {prob*100:.2f}%"
+    )
 
-    else:
+elif prob >= 0.70:
 
-        st.error(
-            f"{label}\n\nProbability: {prob*100:.2f}%"
-        )
+    st.warning(
+        f"⚠️ UNCERTAIN\n\nProbability: {prob*100:.2f}%"
+    )
+
+else:
+
+    st.error(
+        f"😴 DROWSY\n\nProbability: {prob*100:.2f}%"
+    )
 
 
 # --------------------------------------------------
