@@ -92,7 +92,8 @@ def predict_image(img):
         label = "✅ ALERT"
     else:
         label = "😴 DROWSY"
-        return label, prob
+
+    return label, prob
     
 
 
