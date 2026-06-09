@@ -2,6 +2,9 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 import av
+import cv2
+from collections import deque
+from threading import Lock
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
 st.set_page_config(
@@ -14,7 +17,7 @@ st.title("🚗 Real-Time Drowsiness Detection")
 IMG_SIZE = (128, 128)
 
 # -----------------------------
-# LOAD MODEL
+# MODEL
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -33,50 +36,72 @@ def load_model():
 
 interpreter, input_details, output_details = load_model()
 
+# Thread safety
+interpreter_lock = Lock()
+
+# Shared state
+if "probability" not in st.session_state:
+    st.session_state.probability = 0.0
+
+if "status" not in st.session_state:
+    st.session_state.status = "Waiting..."
+
 # -----------------------------
-# PROCESSOR
+# VIDEO PROCESSOR
 # -----------------------------
 class VideoProcessor(VideoProcessorBase):
 
+    def __init__(self):
+        self.history = deque(maxlen=15)
+
     def predict(self, frame):
 
-        rgb = frame[:, :, ::-1]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        rgb = tf.image.resize(
-            rgb,
-            IMG_SIZE
-        ).numpy()
+        rgb = cv2.resize(rgb, IMG_SIZE)
 
-        rgb = rgb.astype(np.float32)
-
-        rgb = rgb / 255.0
+        rgb = rgb.astype(np.float32) / 255.0
 
         rgb = np.expand_dims(rgb, axis=0)
 
-        interpreter.set_tensor(
-            input_details[0]["index"],
-            rgb
-        )
+        with interpreter_lock:
 
-        interpreter.invoke()
+            interpreter.set_tensor(
+                input_details[0]["index"],
+                rgb
+            )
 
-        prob = float(
-            interpreter.get_tensor(
-                output_details[0]["index"]
-            )[0][0]
-        )
+            interpreter.invoke()
+
+            prob = float(
+                interpreter.get_tensor(
+                    output_details[0]["index"]
+                )[0][0]
+            )
 
         return prob
 
     def recv(self, frame):
 
-        img = frame.to_ndarray(
-            format="bgr24"
-        )
+        img = frame.to_ndarray(format="bgr24")
 
         prob = self.predict(img)
 
-        print("Probability:", prob)
+        self.history.append(prob)
+
+        avg_prob = float(np.mean(self.history))
+
+        # Save for UI
+        st.session_state.probability = avg_prob
+
+        if avg_prob >= 0.85:
+            st.session_state.status = "✅ ALERT"
+
+        elif avg_prob >= 0.70:
+            st.session_state.status = "⚠️ UNCERTAIN"
+
+        else:
+            st.session_state.status = "😴 DROWSY"
 
         return av.VideoFrame.from_ndarray(
             img,
@@ -95,6 +120,35 @@ webrtc_streamer(
     }
 )
 
+st.divider()
+
+st.subheader("Prediction Details")
+
+st.write(
+    f"Raw Probability: "
+    f"{st.session_state.probability:.4f}"
+)
+
+prob = st.session_state.probability
+
+if prob >= 0.85:
+
+    st.success(
+        f"✅ ALERT\n\nProbability: {prob*100:.2f}%"
+    )
+
+elif prob >= 0.70:
+
+    st.warning(
+        f"⚠️ UNCERTAIN\n\nProbability: {prob*100:.2f}%"
+    )
+
+else:
+
+    st.error(
+        f"😴 DROWSY\n\nProbability: {prob*100:.2f}%"
+    )
+
 st.info(
-    "Camera ke samne baith kar test karein."
+    "Camera ke samne seedha baith kar test karein."
 )
