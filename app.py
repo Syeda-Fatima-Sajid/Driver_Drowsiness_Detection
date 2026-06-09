@@ -1,171 +1,109 @@
 import streamlit as st
-import numpy as np
-from PIL import Image
 import tensorflow as tf
+import numpy as np
+import av
+from collections import deque
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
-# --------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------
 st.set_page_config(
     page_title="Driver Drowsiness Detection",
-    page_icon="🚗",
-    layout="centered"
+    page_icon="🚗"
 )
 
-st.title("🚗 Driver Drowsiness Detection (TFLite)")
-st.markdown("### EfficientNetB0 - TensorFlow Lite")
+st.title("🚗 Real-Time Drowsiness Detection")
 
 IMG_SIZE = (128, 128)
 
-# --------------------------------------------------
-# LOAD TFLITE MODEL
-# --------------------------------------------------
+# -----------------------------
+# LOAD TFLITE
+# -----------------------------
 @st.cache_resource
-def load_tflite_model():
+def load_model():
     interpreter = tf.lite.Interpreter(
         model_path="drowsiness_model.tflite"
     )
 
     interpreter.allocate_tensors()
 
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-
-    return interpreter, input_details, output_details
-
-
-interpreter, input_details, output_details = load_tflite_model()
-
-# --------------------------------------------------
-# SIDEBAR
-# --------------------------------------------------
-st.sidebar.header("⚙ Settings")
-st.sidebar.write("Threshold = 0.85")
-
-# --------------------------------------------------
-# PREPROCESS
-# SAME AS YOUR NGROK VERSION
-# RGB -> 128x128 -> /255
-# --------------------------------------------------
-def preprocess_image(img):
-
-    img = img.convert("RGB")
-    img = img.resize(IMG_SIZE)
-
-    arr = np.array(img, dtype=np.float32)
-
-    arr = arr / 255.0
-
-    arr = np.expand_dims(arr, axis=0)
-
-    return arr
-
-
-# --------------------------------------------------
-# TFLITE PREDICTION
-# --------------------------------------------------
-def predict_image(img):
-
-    arr = preprocess_image(img)
-
-    interpreter.set_tensor(
-        input_details[0]["index"],
-        arr.astype(np.float32)
+    return (
+        interpreter,
+        interpreter.get_input_details(),
+        interpreter.get_output_details()
     )
 
-    interpreter.invoke()
+interpreter, input_details, output_details = load_model()
 
-    prob = float(
-        interpreter.get_tensor(
-            output_details[0]["index"]
-        )[0][0]
-    )
+# -----------------------------
+# FRAME PROCESSOR
+# -----------------------------
+class VideoProcessor(VideoProcessorBase):
 
-    return prob
-    
+    def __init__(self):
+        self.history = deque(maxlen=15)
 
+    def predict(self, frame):
 
-# --------------------------------------------------
-# PROCESS IMAGE
-# --------------------------------------------------
-# --------------------------------------------------
-# PROCESS IMAGE
-# --------------------------------------------------
-def process_image(img):
+        frame = frame[:, :, ::-1]  # BGR -> RGB
 
-    st.image(
-        img,
-        caption="Input Image",
-        use_container_width=True
-    )
+        frame = tf.image.resize(
+            frame,
+            IMG_SIZE
+        ).numpy()
 
-    prob = predict_image(img)
+        frame = frame.astype(np.float32) / 255.0
 
-    st.write("### Prediction Details")
-    st.write(f"Raw Probability: {prob:.4f}")
+        frame = np.expand_dims(frame, axis=0)
 
-    if prob >= 0.85:
-
-        st.success(
-            f"✅ ALERT\n\nProbability: {prob*100:.2f}%"
+        interpreter.set_tensor(
+            input_details[0]["index"],
+            frame
         )
 
-    elif prob >= 0.70:
+        interpreter.invoke()
 
-        st.warning(
-            f"⚠️ UNCERTAIN\n\nProbability: {prob*100:.2f}%"
+        prob = float(
+            interpreter.get_tensor(
+                output_details[0]["index"]
+            )[0][0]
         )
 
-    else:
+        return prob
 
-        st.error(
-            f"😴 DROWSY\n\nProbability: {prob*100:.2f}%"
+    def recv(self, frame):
+
+        img = frame.to_ndarray(format="bgr24")
+
+        prob = self.predict(img)
+
+        self.history.append(prob)
+
+        avg_prob = np.mean(self.history)
+
+        if avg_prob >= 0.85:
+            label = "ALERT"
+        elif avg_prob >= 0.70:
+            label = "UNCERTAIN"
+        else:
+            label = "DROWSY"
+
+        return av.VideoFrame.from_ndarray(
+            img,
+            format="bgr24"
         )
 
-# --------------------------------------------------
-# INPUT MODE
-# --------------------------------------------------
-mode = st.radio(
-    "Choose Input Method",
-    ["📁 Image Upload", "📷 Camera"],
-    horizontal=True
+# -----------------------------
+# START CAMERA
+# -----------------------------
+ctx = webrtc_streamer(
+    key="drowsiness",
+    video_processor_factory=VideoProcessor,
+    media_stream_constraints={
+        "video": True,
+        "audio": False
+    }
 )
 
-st.divider()
-
-# --------------------------------------------------
-# IMAGE UPLOAD
-# --------------------------------------------------
-if mode == "📁 Image Upload":
-
-    uploaded_file = st.file_uploader(
-        "Upload Image",
-        type=["jpg", "jpeg", "png"]
-    )
-
-    if uploaded_file:
-
-        image = Image.open(uploaded_file)
-
-        process_image(image)
-
-# --------------------------------------------------
-# CAMERA
-# --------------------------------------------------
-elif mode == "📷 Camera":
-
-    camera_file = st.camera_input(
-        "Take a Picture"
-    )
-
-    if camera_file:
-
-        image = Image.open(camera_file)
-
-        process_image(image)
-
-st.divider()
-
-st.caption(
-    "EfficientNetB0 • TensorFlow Lite • Streamlit"
+st.info(
+    "Camera ko seedha face karein. "
+    "Prediction multiple frames ka average use karegi."
 )
