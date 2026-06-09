@@ -40,14 +40,7 @@ interpreter, input_details, output_details = load_tflite_model()
 # SIDEBAR
 # --------------------------------------------------
 st.sidebar.header("⚙ Settings")
-
-threshold = st.sidebar.number_input(
-    "Prediction Threshold",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.50,
-    step=0.01
-)
+st.sidebar.write("Threshold = 0.85")
 
 # --------------------------------------------------
 # PREPROCESS
@@ -95,6 +88,9 @@ def predict_image(img):
 # --------------------------------------------------
 # PROCESS IMAGE
 # --------------------------------------------------
+# --------------------------------------------------
+# PROCESS IMAGE
+# --------------------------------------------------
 def process_image(img):
 
     st.image(
@@ -105,27 +101,26 @@ def process_image(img):
 
     prob = predict_image(img)
 
-st.write("### Prediction Details")
-st.write(f"Raw Probability: {prob:.4f}")
+    st.write("### Prediction Details")
+    st.write(f"Raw Probability: {prob:.4f}")
 
-if prob >= 0.85:
+    if prob >= 0.85:
 
-    st.success(
-        f"✅ ALERT\n\nProbability: {prob*100:.2f}%"
-    )
+        st.success(
+            f"✅ ALERT\n\nProbability: {prob*100:.2f}%"
+        )
 
-elif prob >= 0.70:
+    elif prob >= 0.70:
 
-    st.warning(
-        f"⚠️ UNCERTAIN\n\nProbability: {prob*100:.2f}%"
-    )
+        st.warning(
+            f"⚠️ UNCERTAIN\n\nProbability: {prob*100:.2f}%"
+        )
 
-else:
+    else:
 
-    st.error(
-        f"😴 DROWSY\n\nProbability: {prob*100:.2f}%"
-    )
-
+        st.error(
+            f"😴 DROWSY\n\nProbability: {prob*100:.2f}%"
+        )
 
 # --------------------------------------------------
 # INPUT MODE
